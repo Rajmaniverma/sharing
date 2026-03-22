@@ -30,10 +30,19 @@ function App() {
 
     newPeer.on('connection', (conn) => {
       console.log('Incoming connection from: ', conn.peer);
-      // Ensure we don't already have this connection
-      if (!connections.find(c => c.peer === conn.peer)) {
-          setIncomingConnection(conn);
-      }
+      // Immediately bind dummy error to prevent EventEmitter from throwing Uncaught Exceptions
+      conn.on('error', (err) => console.log('Pending conn err:', err));
+      conn.on('open', () => { conn._isFullyOpen = true; });
+
+      // We use setTimeout to ensure state is not swallowed by React batch updates
+      setTimeout(() => {
+        setConnections(prev => {
+          if (!prev.find(c => c.peer === conn.peer)) {
+            setIncomingConnection(conn);
+          }
+          return prev;
+        });
+      }, 10);
     });
 
     newPeer.on('error', (err) => {
@@ -239,22 +248,27 @@ function App() {
                   className="btn-primary" 
                   style={{ background: 'var(--success)', minWidth: '100px' }}
                   onClick={() => {
-                    const tryAccept = () => {
+                    if (!incomingConnection) return;
+                    const proceed = () => {
                       try {
                         incomingConnection.send({ type: 'signal_accept' });
                         handleConnection(incomingConnection);
                       } catch (e) {
-                         if (!incomingConnection._retries) incomingConnection._retries = 0;
-                         incomingConnection._retries++;
-                         if (incomingConnection._retries > 50) {
-                           alert("Failed to accept. Mobile connection timed out.");
-                           setIncomingConnection(null);
-                           return;
-                         }
-                         setTimeout(tryAccept, 200);
+                         alert("Accept failed cleanly.");
                       }
                     };
-                    tryAccept();
+                    if (incomingConnection.open || incomingConnection._isFullyOpen) {
+                      proceed();
+                    } else {
+                       const timer = setTimeout(() => {
+                         alert("Connection timeout (Data Channel couldn't open)");
+                         setIncomingConnection(null);
+                       }, 10000);
+                       incomingConnection.on('open', () => {
+                         clearTimeout(timer);
+                         proceed();
+                       });
+                    }
                   }}
                 >
                   Accept
@@ -263,12 +277,11 @@ function App() {
                   className="btn-primary" 
                   style={{ background: 'var(--error)', minWidth: '100px' }}
                   onClick={() => {
-                    const tryDecline = () => {
-                      try { incomingConnection.send({ type: 'signal_decline' }); } catch(e){}
-                      incomingConnection.close();
-                      setIncomingConnection(null);
-                    };
-                    tryDecline();
+                    if (incomingConnection) {
+                       try { incomingConnection.send({ type: 'signal_decline' }); } catch(e){}
+                       incomingConnection.close();
+                    }
+                    setIncomingConnection(null);
                   }}
                 >
                   Decline
