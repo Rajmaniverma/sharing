@@ -15,6 +15,7 @@ function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [messages, setMessages] = useState([]);
   const [remoteId, setRemoteId] = useState('');
+  const [incomingConnection, setIncomingConnection] = useState(null);
 
   // Setup PeerJS on mount
   useEffect(() => {
@@ -32,7 +33,8 @@ function App() {
     // Listen for incoming connections
     newPeer.on('connection', (conn) => {
       console.log('Incoming connection from: ', conn.peer);
-      handleConnection(conn);
+      // Prompt user to accept the connection
+      setIncomingConnection(conn);
     });
 
     newPeer.on('error', (err) => {
@@ -67,12 +69,19 @@ function App() {
   }, [messages, isConnected]);
 
   const handleConnection = (conn) => {
-    conn.on('open', () => {
+    const setupConnection = () => {
       setIsConnected(true);
       setIsConnecting(false);
       setConnection(conn);
       setRemoteId(conn.peer);
-    });
+      setIncomingConnection(null);
+    };
+
+    if (conn.open) {
+      setupConnection();
+    } else {
+      conn.on('open', setupConnection);
+    }
 
     conn.on('data', (data) => {
       console.log('Received data', data);
@@ -114,7 +123,17 @@ function App() {
     if (!peer || peerId === myId) return;
     setIsConnecting(true);
     const conn = peer.connect(peerId, { reliable: true });
-    handleConnection(conn);
+    
+    // For the initiator, we wait for open
+    conn.on('open', () => {
+      handleConnection(conn);
+    });
+    
+    conn.on('error', (err) => {
+      console.error('Connection error:', err);
+      setIsConnecting(false);
+      alert('Failed to connect to peer.');
+    });
   };
 
   const sendMessage = (text) => {
@@ -186,6 +205,37 @@ function App() {
       </header>
 
       <main className="main-content">
+        {incomingConnection && !isConnected && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5,5,5,0.85)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-lg)' }}>
+            <div className="connect-card" style={{ textAlign: 'center', boxShadow: 'var(--shadow-lg)' }}>
+              <ShieldAlert size={48} color="var(--accent-primary)" style={{ margin: '0 auto 1rem' }} />
+              <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Incoming Connection</h3>
+              <p style={{ margin: '1rem 0', color: 'var(--text-secondary)' }}>
+                Peer <strong>{incomingConnection.peer}</strong> wants to connect.
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1.5rem' }}>
+                <button 
+                  className="btn-primary" 
+                  style={{ background: 'var(--success)', minWidth: '100px' }}
+                  onClick={() => handleConnection(incomingConnection)}
+                >
+                  Accept
+                </button>
+                <button 
+                  className="btn-primary" 
+                  style={{ background: 'var(--error)', minWidth: '100px' }}
+                  onClick={() => {
+                    incomingConnection.close();
+                    setIncomingConnection(null);
+                  }}
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!isConnected ? (
           <ConnectionScreen
             myId={myId}
