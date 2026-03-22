@@ -69,19 +69,11 @@ function App() {
   }, [messages, isConnected]);
 
   const handleConnection = (conn) => {
-    const setupConnection = () => {
-      setIsConnected(true);
-      setIsConnecting(false);
-      setConnection(conn);
-      setRemoteId(conn.peer);
-      setIncomingConnection(null);
-    };
-
-    if (conn.open) {
-      setupConnection();
-    } else {
-      conn.on('open', setupConnection);
-    }
+    setIsConnected(true);
+    setIsConnecting(false);
+    setConnection(conn);
+    setRemoteId(conn.peer);
+    setIncomingConnection(null);
 
     conn.on('data', (data) => {
       console.log('Received data', data);
@@ -126,7 +118,19 @@ function App() {
     
     // For the initiator, we wait for open
     conn.on('open', () => {
-      handleConnection(conn);
+      let isHandled = false;
+      conn.on('data', (data) => {
+        if (isHandled) return;
+        if (data && data.type === 'signal_accept') {
+          isHandled = true;
+          handleConnection(conn);
+        } else if (data && data.type === 'signal_decline') {
+          isHandled = true;
+          alert('Connection declined by peer.');
+          setIsConnecting(false);
+          conn.close();
+        }
+      });
     });
     
     conn.on('error', (err) => {
@@ -217,7 +221,13 @@ function App() {
                 <button 
                   className="btn-primary" 
                   style={{ background: 'var(--success)', minWidth: '100px' }}
-                  onClick={() => handleConnection(incomingConnection)}
+                  onClick={() => {
+                    const acceptConn = () => {
+                      incomingConnection.send({ type: 'signal_accept' });
+                      handleConnection(incomingConnection);
+                    };
+                    if (incomingConnection.open) acceptConn(); else incomingConnection.on('open', acceptConn);
+                  }}
                 >
                   Accept
                 </button>
@@ -225,8 +235,12 @@ function App() {
                   className="btn-primary" 
                   style={{ background: 'var(--error)', minWidth: '100px' }}
                   onClick={() => {
-                    incomingConnection.close();
-                    setIncomingConnection(null);
+                    const declineConn = () => {
+                      incomingConnection.send({ type: 'signal_decline' });
+                      incomingConnection.close();
+                      setIncomingConnection(null);
+                    };
+                    if (incomingConnection.open) declineConn(); else incomingConnection.on('open', declineConn);
                   }}
                 >
                   Decline
