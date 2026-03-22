@@ -239,17 +239,22 @@ function App() {
                   className="btn-primary" 
                   style={{ background: 'var(--success)', minWidth: '100px' }}
                   onClick={() => {
-                    const acceptConn = () => {
+                    const tryAccept = () => {
                       try {
                         incomingConnection.send({ type: 'signal_accept' });
                         handleConnection(incomingConnection);
                       } catch (e) {
-                         alert("Failed to accept. Mobile connection may have slept.");
-                         setIncomingConnection(null);
+                         if (!incomingConnection._retries) incomingConnection._retries = 0;
+                         incomingConnection._retries++;
+                         if (incomingConnection._retries > 50) {
+                           alert("Failed to accept. Mobile connection timed out.");
+                           setIncomingConnection(null);
+                           return;
+                         }
+                         setTimeout(tryAccept, 200);
                       }
                     };
-                    if (incomingConnection.open) acceptConn(); 
-                    else incomingConnection.on('open', acceptConn);
+                    tryAccept();
                   }}
                 >
                   Accept
@@ -258,13 +263,12 @@ function App() {
                   className="btn-primary" 
                   style={{ background: 'var(--error)', minWidth: '100px' }}
                   onClick={() => {
-                    const declineConn = () => {
+                    const tryDecline = () => {
                       try { incomingConnection.send({ type: 'signal_decline' }); } catch(e){}
                       incomingConnection.close();
                       setIncomingConnection(null);
                     };
-                    if (incomingConnection.open) declineConn(); 
-                    else incomingConnection.on('open', declineConn);
+                    tryDecline();
                   }}
                 >
                   Decline
