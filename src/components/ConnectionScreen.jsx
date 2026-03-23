@@ -12,12 +12,18 @@ export const ConnectionScreen = ({ myId, onConnect, isConnecting }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (remoteId.trim().length === 12) {
-      onConnect(remoteId.trim());
-    }
-  };
+const handleSubmit = (e) => {
+  e.preventDefault();
+
+  const id = remoteId.trim();
+
+  if (!id) {
+    alert("Enter Peer ID");
+    return;
+  }
+
+  onConnect(id);
+};
 
   return (
     <div className="connect-screen">
