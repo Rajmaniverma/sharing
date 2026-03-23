@@ -134,7 +134,7 @@ function App() {
         }
         return false;
       });
-    }, 15000);
+    }, 150000);
 
     conn.on('open', () => {
       clearTimeout(timeout);
