@@ -37,6 +37,8 @@ function App() {
 
     newPeer.on('open', (id) => {
       console.log('My peer ID is:', id);
+      setPeer(newPeer);
+      setMessages(getChatHistory());
     });
 
     // ✅ FIX: simple incoming connection (no timeout mess)
@@ -50,10 +52,6 @@ function App() {
       setIsConnecting(false);
       alert("Peer error: " + err.message);
     });
-
-    setPeer(newPeer);
-
-    setMessages(getChatHistory());
 
     return () => newPeer.destroy();
 
