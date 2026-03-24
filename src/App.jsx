@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import Peer from 'peerjs';
 import { getSavedId, getChatHistory, saveChatHistory } from './utils/storage';
 import { ConnectionScreen } from './components/ConnectionScreen';
@@ -6,6 +6,8 @@ import { ChatScreen } from './components/ChatScreen';
 import { ShieldAlert } from 'lucide-react';
 import './App.css';
 import clsx from "clsx";
+
+const fileChunksMap = new Map();
 
 function App() {
 
@@ -86,12 +88,44 @@ function App() {
 
     conn.on('data', (data) => {
 
-      if (data.type === 'file' || data.type === 'image') {
+      if (data.type === 'file-chunk') {
+        const { fileId, fileName, fileSize, fileType, chunkIndex, totalChunks, data: chunkData } = data;
+        
+        if (!fileChunksMap.has(fileId)) {
+          fileChunksMap.set(fileId, new Array(totalChunks));
+        }
+        
+        const chunksArray = fileChunksMap.get(fileId);
+        chunksArray[chunkIndex] = chunkData;
+        
+        const receivedCount = chunksArray.filter(Boolean).length;
+        if (receivedCount === totalChunks) {
+           const base64String = chunksArray.join('');
+           fileChunksMap.delete(fileId);
+           
+           fetch(base64String)
+             .then(res => res.blob())
+             .then(blob => {
+                 const url = URL.createObjectURL(blob);
+                 setMessages(prev => [...prev, {
+                    id: fileId,
+                    type: fileType,
+                    fileName: fileName,
+                    fileSize: fileSize,
+                    fileUrl: url,
+                    sender: conn.peer,
+                    timestamp: Date.now()
+                 }]);
+             })
+             .catch(err => console.error("Could not convert base64 to blob", err));
+        }
+      } else if (data.type === 'file' || data.type === 'image') {
         const blob = new Blob([data.fileData]);
         const url = URL.createObjectURL(blob);
 
         setMessages(prev => [...prev, {
           ...data,
+          fileData: undefined, // Avoid saving massive buffers to sessionStorage
           fileUrl: url,
           sender: conn.peer
         }]);
@@ -149,7 +183,9 @@ function App() {
 
   const broadcastData = (dataObj, msgObject) => {
     connections.forEach(conn => conn.send(dataObj));
-    setMessages(prev => [...prev, msgObject]);
+    if (msgObject) {
+      setMessages(prev => [...prev, msgObject]);
+    }
   };
 
   const sendMessage = (text) => {
@@ -166,26 +202,53 @@ function App() {
   };
 
   const sendFile = (file) => {
+    const fileId = Date.now().toString();
+    const isImage = file.type.startsWith('image');
+    
+    // Add msg to UI immediately without the massive payload
+    const localMsg = {
+      id: fileId,
+      type: isImage ? 'image' : 'file',
+      fileName: file.name,
+      fileSize: file.size,
+      fileUrl: URL.createObjectURL(file),
+      sender: 'me',
+      timestamp: Date.now(),
+    };
+    setMessages(prev => [...prev, localMsg]);
 
     const reader = new FileReader();
-
     reader.onload = (e) => {
-
-      const msg = {
-        id: Date.now().toString(),
-        type: file.type.startsWith('image') ? 'image' : 'file',
-        fileName: file.name,
-        fileSize: file.size,
-        fileData: e.target.result,
-        timestamp: Date.now(),
+      const base64Data = e.target.result;
+      const CHUNK_SIZE = 50 * 1024; // 50KB chunks
+      const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
+      let i = 0;
+      
+      const sendNextChunk = () => {
+         if (i >= totalChunks) return;
+         
+         const chunk = base64Data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+         const msgChunk = {
+            type: 'file-chunk',
+            fileId,
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: isImage ? 'image' : 'file',
+            chunkIndex: i,
+            totalChunks,
+            data: chunk
+         };
+         
+         connections.forEach(conn => conn.send(msgChunk));
+         i++;
+         
+         setTimeout(sendNextChunk, 20); // allow buffer to drain smoothly
       };
-
-      const url = URL.createObjectURL(file);
-
-      broadcastData(msg, { ...msg, fileUrl: url, sender: 'me' });
+      
+      sendNextChunk();
     };
 
-    reader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
   };
 
   const isConnected = connections.length > 0;

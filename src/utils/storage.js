@@ -26,3 +26,5 @@ export const getChatHistory = () => {
 export const saveChatHistory = (history) => {
   sessionStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(history));
 };
+
+
