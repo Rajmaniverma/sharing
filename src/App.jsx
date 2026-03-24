@@ -11,6 +11,16 @@ const fileChunksMap = new Map();
 
 function App() {
 
+  // ✅ Clear storage on exit
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      localStorage.clear();
+      sessionStorage.clear();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   // ✅ FIX: initialize directly (no warning)
   const [myId] = useState(() => getSavedId());
 
